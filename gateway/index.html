@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Networks &amp; Ports</title>
+  <style>
+    :root { --ink:#1f2933; --muted:#6b7280; --accent:#2563eb; --line:#cbd5e1; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; color: var(--ink);
+           max-width: 46rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.45; }
+    h1 { font-size: 1.55rem; margin: 0 0 .25rem; }
+    .sub { color: var(--muted); margin: 0 0 1.5rem; }
+    .row { display: flex; gap: .5rem; margin-bottom: 1.25rem; }
+    #text { flex: 1; font-size: 1rem; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: .5rem; }
+    button { font-size: 1rem; padding: .6rem 1.25rem; border: none; border-radius: .5rem;
+             background: var(--accent); color: #fff; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .card { border: 1px solid var(--line); border-radius: .75rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    .card h2 { font-size: .78rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 0 0 .7rem; }
+    pre { margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9rem; white-space: pre-wrap; }
+    .ports pre { margin-bottom: 1rem; }
+    .hint { color: var(--muted); }
+    svg { width: 100%; height: auto; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Networks &amp; Ports</h1>
+  <p class="sub">A live demo — two containers, one published port, one message.</p>
+
+  <div class="row">
+    <input id="text" value="hello from my browser">
+    <button onclick="send()">Send</button>
+  </div>
+
+  <div class="card" id="responseCard" hidden>
+    <h2>Processor's reply</h2>
+    <pre id="response"></pre>
+  </div>
+
+  <div class="card ports">
+    <h2>Which ports were used</h2>
+    <pre id="portText" class="hint">Press Send to see the ports.</pre>
+
+    <svg viewBox="0 0 800 200" role="img" aria-label="Flow from browser to gateway to processor">
+      <defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#2563eb"/>
+        </marker>
+        <marker id="ahg" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#9ca3af"/>
+        </marker>
+      </defs>
+
+      <!-- boxes -->
+      <rect x="15"  y="60" width="150" height="74" rx="10" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="90"  y="92"  text-anchor="middle" font-size="14" font-weight="600" fill="#1f2933">your browser</text>
+      <text x="90"  y="111" text-anchor="middle" font-size="11" fill="#6b7280">you type here</text>
+
+      <rect x="325" y="60" width="150" height="74" rx="10" fill="#eff6ff" stroke="#93c5fd"/>
+      <text x="400" y="92"  text-anchor="middle" font-size="14" font-weight="600" fill="#1f2933">gateway</text>
+      <text x="400" y="111" text-anchor="middle" font-size="11" fill="#6b7280">listens :9100</text>
+
+      <rect x="635" y="60" width="150" height="74" rx="10" fill="#eff6ff" stroke="#93c5fd"/>
+      <text x="710" y="92"  text-anchor="middle" font-size="14" font-weight="600" fill="#1f2933">processor</text>
+      <text x="710" y="111" text-anchor="middle" font-size="11" fill="#6b7280">listens :<tspan id="d_listen">—</tspan></text>
+
+      <!-- forward arrows (request) -->
+      <line x1="167" y1="88" x2="321" y2="88" stroke="#2563eb" stroke-width="2" marker-end="url(#ah)"/>
+      <text x="245" y="78" text-anchor="middle" font-size="11" fill="#2563eb">localhost:8090 → :9100</text>
+
+      <line x1="477" y1="88" x2="631" y2="88" stroke="#2563eb" stroke-width="2" marker-end="url(#ah)"/>
+      <text x="555" y="78" text-anchor="middle" font-size="11" fill="#2563eb">out :<tspan id="d_out">—</tspan> → dst :<tspan id="d_dst">—</tspan></text>
+
+      <!-- return arrows (reply) — same connection, ports reversed -->
+      <line x1="321" y1="110" x2="167" y2="110" stroke="#9ca3af" stroke-width="2" marker-end="url(#ahg)"/>
+      <line x1="631" y1="110" x2="477" y2="110" stroke="#9ca3af" stroke-width="2" marker-end="url(#ahg)"/>
+      <text x="245" y="126" text-anchor="middle" font-size="11" fill="#9ca3af">:8090 ← :9100 reply</text>
+      <text x="555" y="126" text-anchor="middle" font-size="11" fill="#9ca3af">:<tspan id="d_rdst">—</tspan> ← :<tspan id="d_rsrc">—</tspan> reply</text>
+    </svg>
+  </div>
+
+  <script>
+    const pad = (label, val) => label.padEnd(30) + val;
+
+    async function send() {
+      const text = document.getElementById("text").value;
+
+      // send the text to the gateway; it forwards to the processor and returns the reply
+      const response = await fetch("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      });
+      const reply = await response.json();
+
+      // the processor's reply — just the upper-cased text
+      document.getElementById("response").textContent = reply.upper;
+      document.getElementById("responseCard").hidden = false;
+
+      // the ports, as text...
+      document.getElementById("portText").textContent = [
+        pad("gateway sent from port", reply.gateway_out_port),
+        pad("processor listening on port", reply.listen_port),
+        pad("processor saw it arrive from", reply.sender_port),
+      ].join("\n");
+      document.getElementById("portText").classList.remove("hint");
+
+      // ...and on the diagram
+      document.getElementById("d_out").textContent = reply.gateway_out_port;
+      document.getElementById("d_dst").textContent = reply.listen_port;
+      document.getElementById("d_listen").textContent = reply.listen_port;
+      // the reply comes back on the same connection — same two ports, reversed
+      document.getElementById("d_rsrc").textContent = reply.listen_port;
+      document.getElementById("d_rdst").textContent = reply.gateway_out_port;
+    }
+  </script>
+</body>
+</html>

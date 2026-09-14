@@ -1,0 +1,28 @@
+# Two containers, one published port, one message.
+#
+#   browser  --localhost:8090-->  gateway  --http://processor:9200-->  processor
+#               (published port)   (serves the page,   (by name, internal)  (processes,
+#                                   forwards the text)                       replies)
+#
+# Compose gives us the network + name-based DNS for free: gateway reaches
+# "processor" with zero `docker network create`. Only gateway publishes a port;
+# processor stays internal. The processor's port lives here in config (not
+# hardcoded in the code) — change it in one place and both sides follow.
+services:
+  gateway:
+    build: ./gateway         # build the image from gateway/Dockerfile
+    ports:
+      - "8090:9100"        # host:container — reachable from your laptop
+    volumes:
+      - ./gateway:/app       # live-mount the source (edit without rebuilding)
+    environment:
+      PROCESSOR_HOST: processor
+      PROCESSOR_PORT: "9200"
+    depends_on:
+      - processor            # gateway calls processor, so start processor first
+
+  processor:
+    build: ./processor       # build the image from processor/Dockerfile
+    environment:
+      PORT: "9200"
+    # no ports: → internal only; reachable only as http://processor:9200
