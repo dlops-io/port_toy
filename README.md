@@ -64,13 +64,6 @@ port_toy/
 
 _**Step 1 of 4** — the happy path. One command brings up both containers, the network between them, and the name-based DNS that lets one find the other. Everything works; the next step is about seeing **why**._
 
-### Make sure we do not have any running containers and clear up unused images
-
-* Run `docker container ls`
-* Stop any container that is running
-* Run `docker system prune`
-* Run `docker image ls`
-
 ### Clone the github repository
 
 - Clone or download from [here](https://github.com/dlops-io/port_toy)
