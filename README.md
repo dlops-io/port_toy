@@ -101,7 +101,14 @@ processor saw it arrive from    44456
 
 ### Stop it
 
-* Press `Ctrl+C`, then run `docker compose down`
+* Press `Ctrl+C` to stop the containers
+* Run `docker compose down` to remove them
+
+> [!TIP]
+> **Why both?** `Ctrl+C` only **stops** the containers — it doesn't remove them. Run `docker compose ps -a` (note the `-a`, for "all") and you'll still see both, sitting in the `exited` state; `docker network ls` still lists the `port_toy_default` network Compose created. `docker compose down` is the true inverse of `up`: `up` made containers *and* a network, so `down` removes containers *and* the network, leaving only the built images behind. This matters more here than in most demos — Step 2 has you read `docker network ls`, and Step 4 has you build a network by hand, both of which are much easier to follow when there's no stale one lying around.
+
+> [!NOTE]
+> You may hear that you need `down` to "free up the port." Not so — a *stopped* container has already released its port binding, so `localhost:8090` goes dead the moment you press `Ctrl+C`. `down` is about not leaving containers and networks behind, not about the port.
 
 ---
 
