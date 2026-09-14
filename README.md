@@ -126,14 +126,17 @@ Bring the app back up in the background so you keep your terminal:
 
 ```
 NAME                   SERVICE     STATUS    PORTS
-port_toy-gateway-1     gateway     Up        0.0.0.0:8090->9100/tcp
+port_toy-gateway-1     gateway     Up        127.0.0.1:8090->9100/tcp
 port_toy-processor-1   processor   Up
 ```
 
 The gateway has a mapping. The processor's `PORTS` column is **empty** — it is listening on 9200, but that port was never published to your laptop.
 
 > [!TIP]
-> **Reading `0.0.0.0:8090->9100/tcp`:** Left of the arrow is your **laptop**, right of it is **inside the container**. So: "traffic arriving at port 8090 on any of this machine's addresses gets forwarded to port 9100 inside the gateway container." This comes from the `"8090:9100"` line in `docker-compose.yml`, and the rule is always **`host:container`**. Getting the order backwards is the single most common Docker networking mistake — if `localhost:8090` gives you nothing, check which side is which.
+> **Reading `127.0.0.1:8090->9100/tcp`:** Left of the arrow is your **laptop**, right of it is **inside the container**. So: "traffic arriving at port 8090 on this laptop gets forwarded to port 9100 inside the gateway container." It comes from the `"127.0.0.1:8090:9100"` line in `docker-compose.yml`, and the rule is always **`host:container`** — host first. Getting the order backwards is the single most common Docker networking mistake; if `localhost:8090` gives you nothing, check which side is which.
+
+> [!TIP]
+> **What's that `127.0.0.1` in front?** A published port takes an optional third field on the left: **`ip:host:container`**. The IP says *which of your laptop's network addresses* accept the connection. `127.0.0.1` is loopback — only this machine. Write `"8090:9100"` with no IP and Docker defaults to **all** addresses, which `docker ps` reports as `0.0.0.0:8090->9100/tcp` — meaning anyone on the same wifi can reach your container. That default is fine at home and a bad idea on campus wifi or in a coffee shop, which is why this demo pins it to `127.0.0.1`. Publish to all addresses only when you actually mean to serve other machines.
 
 ### Prove the processor is not reachable from your laptop
 
@@ -162,7 +165,7 @@ Notice what is *not* in the Python. `gateway.py` reads `PROCESSOR_HOST` and `PRO
 ```yaml
   gateway:
     ports:
-      - "8090:9100"        # host:container — reachable from your laptop
+      - "127.0.0.1:8090:9100"  # ip:host:container — 127.0.0.1 = this laptop only
     environment:
       PROCESSOR_HOST: processor
       PROCESSOR_PORT: "9200"
@@ -183,7 +186,7 @@ _**Step 3 of 4** — now change the numbers. Ports here live in configuration, n
 
 ### Change the published port
 
-* In `docker-compose.yml`, change the gateway's mapping from `"8090:9100"` to `"8095:9100"`
+* In `docker-compose.yml`, change the gateway's mapping from `"127.0.0.1:8090:9100"` to `"127.0.0.1:8095:9100"`
 * `docker compose up -d`
 * Your app is now at **http://localhost:8095**. `localhost:8090` is dead.
 
@@ -206,7 +209,7 @@ The processor moved, but the gateway is still knocking on 9200. Now fix it:
 > [!TIP]
 > **Both sides have to agree.** A port number is a contract between a listener and a caller, so it appears twice: once where the processor binds it (`PORT`) and once where the gateway dials it (`PROCESSOR_PORT`). Keeping both in `docker-compose.yml` means they're at least in the same file, where a mismatch is easy to spot. Hardcoding either one into the Python would hide half the contract inside an image you'd have to rebuild to change. **Config in the compose file, never in the code** — this is the pattern you'll reuse for every service, database URL, and API endpoint in your project.
 
-* Set both back to `"9200"` and the gateway's mapping back to `"8090:9100"` before moving on.
+* Set both back to `"9200"` and the gateway's mapping back to `"127.0.0.1:8090:9100"` before moving on.
 
 ---
 
@@ -236,7 +239,7 @@ No `-p` flag. This container is on the network but publishes nothing, exactly li
 ### Run the gateway — with a published port
 
 ```
-docker run -d --name gateway --network toynet -p 8090:9100 \
+docker run -d --name gateway --network toynet -p 127.0.0.1:8090:9100 \
   -e PROCESSOR_HOST=processor -e PROCESSOR_PORT=9200 toy-gateway
 ```
 
@@ -260,7 +263,9 @@ docker run -d --name gateway --network toynet -p 8090:9100 \
 | What you see | What it means |
 | --- | --- |
 | `"8090:9100"` | `host:container` — port 8090 on your laptop forwards to 9100 inside the container |
-| `0.0.0.0:8090->9100/tcp` | Same mapping, as `docker ps` reports it. Left of `->` is the host |
+| `"127.0.0.1:8090:9100"` | `ip:host:container` — same, but only **this** machine may connect |
+| `127.0.0.1:8090->9100/tcp` | The mapping as `docker ps` reports it. Left of `->` is the host |
+| `0.0.0.0:8090->9100/tcp` | What you get with no IP — **every** address, so others on your wifi can reach it |
 | No `ports:` / no `-p` | Container is **internal only** — reachable from the network, invisible to your laptop |
 | `EXPOSE 9100` in a Dockerfile | Documentation only. It does **not** publish anything; you still need `-p` |
 | `localhost` inside a container | That container itself — not your laptop, not another container |
