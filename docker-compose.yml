@@ -12,7 +12,7 @@ services:
   gateway:
     build: ./gateway         # build the image from gateway/Dockerfile
     ports:
-      - "8090:9100"        # host:container — reachable from your laptop
+      - "127.0.0.1:8090:9100"        # host:container — reachable from your laptop
     volumes:
       - ./gateway:/app       # live-mount the source (edit without rebuilding)
     environment:

@@ -153,7 +153,7 @@ Nothing is listening on 9200 *on your laptop*. The processor is listening on 920
 > **Two lessons in those four commands.** First, **`processor` is a hostname.** Compose put every service on a shared network and registered its service name in DNS, so `http://processor:9200` resolves without you ever knowing an IP. Second, **`localhost` inside a container means *that container*.** Each container gets its own network namespace and its own loopback interface, so from inside the gateway, `localhost` is the gateway — not your Mac, and not the processor. "It works on my machine but the container can't reach it" is almost always this: a service addressed as `localhost` when it should be addressed by its container name.
 
 > [!NOTE]
-> Both containers here have `curl` installed only so you can run these experiments. A real production image would leave it out — fewer tools in the image means less to keep patched.
+> **Only the gateway image has `curl`.** Look at the two Dockerfiles: `gateway/Dockerfile` installs it, `processor/Dockerfile` deliberately doesn't. The gateway is the container you run these experiments *from*; the processor only ever answers requests, so it has no use for it. Leaving it out keeps that image ~19 MB smaller and gives anyone who breaks in one less tool to work with. Install a package in the image that needs it — not in every image.
 
 ### Where the two ports come from
 
