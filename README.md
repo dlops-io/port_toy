@@ -311,7 +311,7 @@ Try the port experiments again if you like — change the numbers in `docker-com
 | No `ports:` / no `-p` | Container is **internal only** — reachable from the network, invisible to your laptop |
 | `EXPOSE 9100` in a Dockerfile | Documentation only. It does **not** publish anything; you still need `-p` |
 | `localhost` inside a container | That container itself — not your laptop, not another container |
-| `http://processor:9200` | Another container **by name**, resolved by Docker's DNS |
+| `http://processor:9200` | Another container **by service name**, resolved by Docker's DNS |
 | Listening port (`9200`) | Stable, you configure it, a server waits there |
 | Source port (`44456`) | Ephemeral, picked by the OS per connection, discarded afterwards |
 | `port is already allocated` | Two containers tried to publish the **same host port**. Change the left number |
