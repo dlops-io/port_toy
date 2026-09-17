@@ -2,282 +2,437 @@
 
 ![Flow: browser → gateway → processor](browser-gateway-processor.png)
 
-Your browser talks to a **gateway** service, which forwards the request to a **processor** service that turns the text into CAPITALS and sends the reply back the same way. The upper-casing is just the toy workload — what you're really learning is **which ports** that request travels through.
+Your browser sends text to a **gateway**. The gateway forwards it to a **processor**. The processor converts the text to CAPITALS and sends it back.
 
-You'll run it four ways - progressing from wiring the network by hand, to inspecting the ports, moving them, and finally letting Docker Compose do the same work for you - which introduces the container networking you'll use throughout AC215.
+The text conversion is simple. The goal is to understand how the containers communicate and which ports they use.
 
-## What you'll build
+## What you’ll learn
 
-The goal: **understand how two containers talk to each other, and which ports are involved**. We do it four ways, each pulling back one more layer of the magic:
+You’ll run the app in four steps:
 
-1. 🧩 **Wire it by hand.** Create the network, build the images, and `docker run` both containers yourself. Two containers, one published port, one reply.
-2. 🔍 **See which ports are open.** Read the `PORTS` column, prove the processor is unreachable from your laptop, then reach it by name from inside the network.
-3. 🔌 **Move the ports.** Change the numbers on the `docker run` flags and watch the app follow - without touching a line of Python.
-4. 🐳 **Do it with Compose.** Put the same network, builds, and runs into `docker-compose.yml` and bring everything up with one command. This is what you've been typing by hand all along.
+1. **Set it up by hand.** Create a network, build the images, and start both containers.
+2. **Check the ports.** See which service your laptop can reach.
+3. **Change the ports.** Change the settings without editing Python.
+4. **Use Compose.** Run the same app from one configuration file.
 
-By the end, you can explain any line in a `ports:` block and debug a container that "can't reach" another one.
+
 
 ## Prerequisites
 
-Complete **[Tutorial 0 - Setup & Installs](https://github.com/dlops-io/ac215-setup)** first. This tutorial
-only needs **Docker Desktop** from that list - no GCP account, no service account, no Python installed
-locally. Everything runs on your laptop.
+Complete [Tutorial 0: Setup & Installs](https://github.com/dlops-io/ac215-setup) first.
 
-> Make sure Docker Desktop is actually running before you start (`docker run hello-world` should succeed).
+You only need Docker Desktop. You do not need a GCP account or Python installed on your laptop.
 
----
+Make sure Docker Desktop is running:
+
+```bash
+docker run hello-world
+```
 
 
 
 ## Contents
 
-Four short walkthroughs :
-
-- [Wire the network by hand](#-wiring-the-network-by-hand)
-- [See which ports are open](#-seeing-which-ports-are-open)
-- [Move the ports](#-moving-the-ports)
-- [Run it with Compose](#-running-it-with-compose)
-
----
+- [Step 1: Set up the network by hand](#step-1-set-up-the-network-by-hand)
+- [Step 2: Check the ports](#step-2-check-the-ports)
+- [Step 3: Change the ports](#step-3-change-the-ports)
+- [Step 4: Run with Compose](#step-4-run-with-compose)
+- [Port and networking cheat sheet](#port-and-networking-cheat-sheet)
 
 
 
-## What's in the box
+## How the app works
 
-Two containers. The `gateway` serves a web page and forwards your text; the `processor` upper-cases it and replies.
+The app has two containers:
 
-```
-browser  --localhost:8090-->  gateway  --http://processor:9200-->  processor
-             (published)     (serves the page,     (by name,        (upper-cases,
-                              forwards the text)    internal only)   replies)
+- **Gateway:** serves the web page and forwards your text.
+- **Processor:** converts the text to capitals and returns it.
+
+```text
+Browser → localhost:8090 → Gateway → processor:9200 → Processor
 ```
 
-```
+Port `8090` is published on your laptop. The gateway listens on port `9100` inside its container. The processor listens on port `9200` inside its container.
+
+The project contains:
+
+```text
 port_toy/
-├── docker-compose.yml   # you'll use this in Step 4 — skip it until then
+├── docker-compose.yml   # Used in Step 4
 ├── gateway/
-│   ├── Dockerfile     # builds the gateway image
-│   ├── gateway.py     # serves the page + forwards your text to the processor
-│   └── index.html     # the page you open at localhost:8090
+│   ├── Dockerfile       # Builds the gateway image
+│   ├── gateway.py       # Serves the page and forwards requests
+│   └── index.html      # The web page
 └── processor/
-    ├── Dockerfile     # builds the processor image
-    └── processor.py   # listens internally, upper-cases the text, replies
+    ├── Dockerfile       # Builds the processor image
+    └── processor.py     # Converts text to capitals
 ```
 
 ---
 
 
 
-## 🧩 Wiring the Network by Hand
+## Step 1: Set up the network by hand
 
-***Step 1 of 4** — no Compose. You create the network, build the images, and start both containers yourself. Same app you'll later start with one command, but every step is a command you typed.*
+First, run the app without Compose. You’ll create the network, build the images, and start the containers yourself.
 
-### Clone the github repository
+### Get the code
 
-- Clone or download from [here](https://github.com/dlops-io/port_toy)
-- `cd port_toy`
+Clone or download the [repository](https://github.com/dlops-io/port_toy). Then open a terminal in the project folder:
+
+```bash
+cd port_toy
+```
 
 
 
 ### Create the network
 
-- `docker network create toynet`
-
-
-
-### Build both images
-
-- `docker build -t toy-processor ./processor`
-- `docker build -t toy-gateway ./gateway`
-
-
-
-### Run the processor — internal only
-
-- `docker run -d --name processor --network toynet -e PORT=9200 toy-processor`
-
-No `-p` flag. This container is on the network but publishes nothing — reachable from other containers, invisible to your laptop.
-
-### Run the gateway — with a published port
-
-```
-docker run -d --name gateway --network toynet -p 127.0.0.1:8090:9100 \
-  -e PROCESSOR_HOST=processor -e PROCESSOR_PORT=9200 toy-gateway
+```bash
+docker network create toynet
 ```
 
-You should see both containers announce themselves in their logs (`docker logs processor`, `docker logs gateway`):
+Both containers will join this network.
 
+### Build the images
+
+```bash
+docker build -t toy-processor ./processor
+docker build -t toy-gateway ./gateway
 ```
-processor  | processor listening on port 9200 (internal only)
-gateway    | gateway listening on port 9100  →  open http://localhost:8090
+
+
+
+### Start the processor
+
+```bash
+docker run -d --name processor --network toynet \
+  -e PORT=9200 toy-processor
 ```
 
-> [!TIP]
-> **What you just typed by hand:** a network, two builds, two runs, two `--name` flags, and a handful of environment variables. Compose will later collapse all of this into one file and one command — but first you should feel every piece.
+There is no `-p` flag. The processor listens on port `9200`, but that port is not published on your laptop.
 
+Other containers on `toynet` can reach it.
 
+### Start the gateway
+
+```bash
+docker run -d --name gateway --network toynet \
+  -p 127.0.0.1:8090:9100 \
+  -e PROCESSOR_HOST=processor \
+  -e PROCESSOR_PORT=9200 \
+  toy-gateway
+```
+
+The gateway joins the same network. It forwards your laptop’s port `8090` to port `9100` inside the container.
+
+Check the logs:
+
+```bash
+docker logs processor
+docker logs gateway
+```
+
+Look for messages like these:
+
+```text
+processor listening on port 9200 (internal only)
+gateway listening on port 9100 → open http://localhost:8090
+```
+
+You have now created a network, built two images, and started two containers. Later, Compose will handle these steps for you.
 
 ### Send a message
 
-- Open **[http://localhost:8090](http://localhost:8090)** in your browser
-- Type a message and click **Send**
+1. Open [http://localhost:8090](http://localhost:8090).
+2. Type a message.
+3. Click **Send**.
 
-You get back the upper-cased text, plus the three port numbers that were involved:
+The page returns your text in capitals. It also shows port information:
 
-```
+```text
 gateway sent from port          44456
-processor listening on port     9200
-processor saw it arrive from    44456
+processor listening on port      9200
+processor saw it arrive from     44456
 ```
 
-> [!TIP]
-> **Why the first and third numbers match:** `9200` is a *listening* port — the processor chose it and waits there. `44456` is an *ephemeral source port* — when the gateway opened the outgoing connection, its operating system grabbed a free high-numbered port to send **from**. The processor reports it as "arrived from" because that's the return address. Send again and you'll get a different number: source ports are picked per connection and thrown away afterwards. Only the listening port is stable, and only listening ports are ones you configure.
 
-> [!TIP]
-> `--name` **is the DNS name.** On a user-defined network like `toynet`, Docker resolves container names automatically, so `--name processor` is precisely what makes `http://processor:9200` work from the gateway. Drop `--network toynet` and both containers land on the default bridge network, where name resolution **doesn't** work and the gateway fails to find the processor. Try it — a deliberate failure you've diagnosed is worth more than one you haven't.
 
-Leave both containers running — Step 2 inspects them.
+### Why do the first and third numbers match?
+
+The processor listens on port `9200`. That is the destination.
+
+The gateway also needs a port for its outgoing connection. The operating system chooses one automatically. In this example, it chose `44456`.
+
+The processor sees the request arriving from that same port. That is why the first and third numbers match.
+
+This temporary port is called an **ephemeral source port**. It may change with each new connection. You do not need to configure it for this app.
+
+### Why does the name `processor` work?
+
+Both containers are on the user-defined network `toynet`. Docker lets containers on this network find each other by name.
+
+That is why the gateway can call:
+
+```text
+http://processor:9200
+```
+
+It does not need to know the processor’s IP address.
+
+Leave both containers running. You’ll inspect them next.
 
 ---
 
 
 
-## 🔍 Seeing Which Ports Are Open
+## Step 2: Check the ports
 
-***Step 2 of 4** — the point of the whole demo. Only **one** of these two containers is reachable from your laptop. Here we prove it: the processor's port is invisible from outside, but reachable by name from inside the network.*
+In this setup, your laptop can reach the gateway through a published port. The processor has no published port.
 
 ### Read the PORTS column
 
-- `docker ps`
+Run:
 
-```
-CONTAINER ID   IMAGE           ...   PORTS                      NAMES
-...            toy-gateway     ...   127.0.0.1:8090->9100/tcp   gateway
-...            toy-processor   ...                              processor
+```bash
+docker ps
 ```
 
-The gateway has a mapping. The processor's `PORTS` column is **empty** — it is listening on 9200, but that port was never published to your laptop.
+You should see something like:
 
-> [!TIP]
-> **Reading** `127.0.0.1:8090->9100/tcp`**:** Left of the arrow is your **laptop**, right of it is **inside the container**. So: "traffic arriving at port 8090 on this laptop gets forwarded to port 9100 inside the gateway container." It comes from the `-p 127.0.0.1:8090:9100` flag you passed to `docker run`, and the rule is always `host:container` — host first. Getting the order backwards is the single most common Docker networking mistake; if `localhost:8090` gives you nothing, check which side is which.
-
-> [!TIP]
-> **What's that** `127.0.0.1` **in front?** A published port takes an optional third field on the left: `ip:host:container`. The IP says *which of your laptop's network addresses* accept the connection. `127.0.0.1` is loopback — only this machine. Write `-p 8090:9100` with no IP and Docker defaults to **all** addresses, which `docker ps` reports as `0.0.0.0:8090->9100/tcp` — meaning anyone on the same wifi can reach your container. That default is fine at home and a bad idea on campus wifi or in a coffee shop, which is why this demo pins it to `127.0.0.1`. Publish to all addresses only when you actually mean to serve other machines.
-
-
-
-### Prove the processor is not reachable from your laptop
-
-- `curl localhost:8090` → returns the HTML page ✅
-- `curl --max-time 3 localhost:9200/health` → `Failed to connect ... Connection refused` ❌
-
-Nothing is listening on 9200 *on your laptop*. The processor is listening on 9200 **inside the Docker network**, which is a different place entirely.
-
-### Now reach it from inside the network
-
-`docker exec` runs a command *inside* a running container — so this is the gateway's view of the world, not yours:
-
-- `docker exec gateway curl http://processor:9200/health` → `ok` ✅
-- `docker exec gateway curl --max-time 3 http://localhost:9200/health` → `Connection refused` ❌
-
-> [!TIP]
-> **Two lessons in those four commands.** First, `processor` **is a hostname.** Putting both containers on `toynet` with `--name` registered each name in that network's DNS, so `http://processor:9200` resolves without you ever knowing an IP. Second, `localhost` **inside a container means *that container*.** Each container gets its own network namespace and its own loopback interface, so from inside the gateway, `localhost` is the gateway — not your Mac, and not the processor. "It works on my machine but the container can't reach it" is almost always this: a service addressed as `localhost` when it should be addressed by its container name.
-
-> [!NOTE]
-> **Only the gateway image has** `curl`**.** Look at the two Dockerfiles: `gateway/Dockerfile` installs it, `processor/Dockerfile` deliberately doesn't. The gateway is the container you run these experiments *from*; the processor only ever answers requests, so it has no use for it. Leaving it out keeps that image ~19 MB smaller and gives anyone who breaks in one less tool to work with. Install a package in the image that needs it — not in every image.
-
-
-
-### Where the two ports come from
-
-Notice what is *not* in the Python. `gateway.py` reads `PROCESSOR_HOST` and `PROCESSOR_PORT` from the environment; `processor.py` reads `PORT`. Both came from the `-e` flags on `docker run`:
-
-```
-# processor — listens internally, no -p
-docker run ... -e PORT=9200 toy-processor
-
-# gateway — publishes 8090→9100, dials the processor by name
-docker run ... -p 127.0.0.1:8090:9100 \
-  -e PROCESSOR_HOST=processor -e PROCESSOR_PORT=9200 toy-gateway
+```text
+IMAGE           PORTS                       NAMES
+toy-gateway     127.0.0.1:8090->9100/tcp      gateway
+toy-processor                               processor
 ```
 
-That missing `-p` on the processor is the whole lesson: **a container is unreachable from outside unless you publish a port.** Listening isn't enough.
+The gateway has a port mapping. The processor does not.
+
+An empty `PORTS` column does not mean the processor is not listening. It means this output shows no published or declared port for it.
+
+### Read the port mapping
+
+```text
+127.0.0.1:8090->9100/tcp
+```
+
+This means:
+
+- Accept connections on your laptop at `127.0.0.1:8090`.
+- Forward them to port `9100` inside the gateway container.
+
+The `-p` flag uses this order:
+
+```text
+IP address : host port : container port
+```
+
+The host port comes first. The container port comes second.
+
+### Why include `127.0.0.1`?
+
+`127.0.0.1` is the loopback address. It limits the published port to your own machine.
+
+If you omit it:
+
+```bash
+-p 8090:9100
+```
+
+Docker normally publishes the port on all host addresses. Other machines may then be able to connect, depending on your network and firewall.
+
+For this tutorial, keep `127.0.0.1`. You do not need to serve other machines.
+
+### Test from your laptop
+
+Run:
+
+```bash
+curl http://localhost:8090
+```
+
+This should return the gateway’s HTML page.
+
+Now try:
+
+```bash
+curl --max-time 3 http://localhost:9200/health
+```
+
+This should fail, assuming nothing else is using port `9200` on your laptop.
+
+The processor listens inside its container. You have not mapped its port to `localhost:9200` on your laptop.
+
+### Test from inside the gateway
+
+`docker exec` runs a command inside a running container.
+
+Run:
+
+```bash
+docker exec gateway curl http://processor:9200/health
+```
+
+This should return:
+
+```text
+ok
+```
+
+Now try:
+
+```bash
+docker exec gateway curl --max-time 3 http://localhost:9200/health
+```
+
+This should fail.
+
+Inside the gateway container, `localhost` means the gateway itself. It does not mean your laptop or the processor.
+
+Use `processor` to reach the processor container.
+
+> The gateway image includes `curl` for these tests. The processor image does not need it.
+
+
+
+### Where do the port settings come from?
+
+The processor reads its listening port from the `PORT` environment variable:
+
+```bash
+-e PORT=9200
+```
+
+The gateway reads the processor’s address from two environment variables:
+
+```bash
+-e PROCESSOR_HOST=processor
+-e PROCESSOR_PORT=9200
+```
+
+The gateway’s published port comes from:
+
+```bash
+-p 127.0.0.1:8090:9100
+```
+
+These settings do different jobs:
+
+- `PORT` tells the processor where to listen.
+- `PROCESSOR_PORT` tells the gateway where to connect.
+- `-p` makes the gateway available through a port on your laptop.
+
+Containers on the same Docker network do not need published ports to communicate.
 
 ---
 
 
 
-## 🔌 Moving the Ports
+## Step 3: Change the ports
 
-***Step 3 of 4** — now change the numbers. Ports here live in the* `docker run` *flags, not in code, so you can move them without editing a single line of Python. Do each change, re-run, and predict what breaks before you look.*
+Now change the port settings without editing Python.
 
-### Change the published port
+### Change the host port
 
-Stop and remove just the gateway, then re-run it on a different host port:
+Remove the gateway container:
 
-- `docker rm -f gateway`
-- Re-run with `-p 127.0.0.1:8095:9100` instead of `8090`:
-
-```
-docker run -d --name gateway --network toynet -p 127.0.0.1:8095:9100 \
-  -e PROCESSOR_HOST=processor -e PROCESSOR_PORT=9200 toy-gateway
+```bash
+docker rm -f gateway
 ```
 
-- Your app is now at **[http://localhost:8095](http://localhost:8095)**. `localhost:8090` is dead.
+Start it again, using host port `8095`:
 
-Nothing inside the container moved — the gateway still listens on 9100. You only changed which door on your laptop leads to it.
-
-> [!TIP]
-> **Why change the host side and not the container side?** The host side is the one that can collide. Two projects can both listen on 9100 *inside* their own containers with no conflict at all, because each has its own network namespace. But they can't both publish to 8090 on your laptop — you'll get `port is already allocated`. That's why the host number is the one you'll find yourself changing, and why published ports are the scarce resource.
-
-
-
-### Change the internal port
-
-Move the processor, **and nothing else**:
-
-- `docker rm -f processor`
-- `docker run -d --name processor --network toynet -e PORT=9300 toy-processor`
-- Send a message from the browser → it fails
-
-The processor moved, but the gateway is still knocking on 9200. Now fix it:
-
-- `docker rm -f gateway`
-- Re-run the gateway with `PROCESSOR_PORT=9300` as well (and put the published port back to `8090` while you're at it):
-
-```
-docker run -d --name gateway --network toynet -p 127.0.0.1:8090:9100 \
-  -e PROCESSOR_HOST=processor -e PROCESSOR_PORT=9300 toy-gateway
+```bash
+docker run -d --name gateway --network toynet \
+  -p 127.0.0.1:8095:9100 \
+  -e PROCESSOR_HOST=processor \
+  -e PROCESSOR_PORT=9200 \
+  toy-gateway
 ```
 
-- Send again → works.
+Open [http://localhost:8095](http://localhost:8095).
 
-> [!TIP]
-> **Both sides have to agree.** A port number is a contract between a listener and a caller, so it appears twice: once where the processor binds it (`PORT`) and once where the gateway dials it (`PROCESSOR_PORT`). Keeping both in the run flags (and later in one compose file) means a mismatch is easy to spot. Hardcoding either one into the Python would hide half the contract inside an image you'd have to rebuild to change. **Config in the run flags / compose file, never in the code** — this is the pattern you'll reuse for every service, database URL, and API endpoint in your project.
+The gateway still listens on port `9100` inside its container. Only the host port changed. The old address, `localhost:8090`, no longer reaches this app.
 
+### When would you change the host port?
 
+Suppose another application already uses host port `8090`.
+
+You cannot publish both applications on the same host address and port. Choose another host port, such as `8095`.
+
+The containers can still use the same internal port. Each container has its own network environment.
+
+### Change the processor’s port
+
+Remove the processor:
+
+```bash
+docker rm -f processor
+```
+
+Start it on port `9300`:
+
+```bash
+docker run -d --name processor --network toynet \
+  -e PORT=9300 toy-processor
+```
+
+Send a message from the browser. It should fail.
+
+The processor now listens on `9300`, but the gateway still connects to `9200`.
+
+### Update the gateway
+
+Remove the gateway:
+
+```bash
+docker rm -f gateway
+```
+
+Start it with the new processor port. Also restore the original host port, `8090`:
+
+```bash
+docker run -d --name gateway --network toynet \
+  -p 127.0.0.1:8090:9100 \
+  -e PROCESSOR_HOST=processor \
+  -e PROCESSOR_PORT=9300 \
+  toy-gateway
+```
+
+Open [http://localhost:8090](http://localhost:8090) and send another message. It should work.
+
+The two settings must agree:
+
+- The processor’s `PORT`.
+- The gateway’s `PROCESSOR_PORT`.
+
+Keeping these values in configuration lets you change them without rebuilding the images.
 
 ### Clean up before Compose
 
-Put things back to the original numbers, then tear everything down so Step 4 starts clean:
+Remove both containers and the network:
 
-- `docker rm -f gateway processor`
-- `docker network rm toynet`
+```bash
+docker rm -f gateway processor
+docker network rm toynet
+```
+
+This gives Step 4 a clean starting point.
 
 ---
 
 
 
-## 🐳 Running it with Compose
+## Step 4: Run with Compose
 
-***Step 4 of 4** — the payoff. Everything you typed by hand is already declared in* `docker-compose.yml`*. One command builds the images, creates the network, starts both containers, and registers the service names in DNS.*
+Docker Compose describes the application in a YAML file. It records the images to build, the containers to start, and the network settings.
 
-Open `docker-compose.yml` and you'll recognize every piece:
+Open `docker-compose.yml`. These settings should look familiar:
 
 ```yaml
   gateway:
     ports:
-      - "127.0.0.1:8090:9100"  # ip:host:container — 127.0.0.1 = this laptop only
+      - "127.0.0.1:8090:9100"
     environment:
       PROCESSOR_HOST: processor
       PROCESSOR_PORT: "9200"
@@ -285,97 +440,139 @@ Open `docker-compose.yml` and you'll recognize every piece:
   processor:
     environment:
       PORT: "9200"
-    # no ports: → internal only; reachable only as http://processor:9200
+    # No published port
+```
+
+This is an excerpt, not the complete file.
+
+The gateway publishes a port. The processor does not. Both use `9200` for the processor’s listening port.
+
+### Start the app
+
+Run:
+
+```bash
+docker compose up
+```
+
+Compose builds the images if needed and starts the containers.
+
+You should see the same listening-port messages as before. Open [http://localhost:8090](http://localhost:8090) and send a message.
+
+### What did Compose do?
+
+Using this project’s configuration, Compose:
+
+1. Built the images if they were not already available.
+2. Created the network named `toynet`.
+3. Started both containers on that network.
+4. Made the services reachable by name.
+
+The gateway can therefore call `http://processor:9200`, just as it did before.
+
+This file explicitly names its network `toynet`. Without a custom network setting, Compose would normally create a project-specific default network, such as `port_toy_default`.
+
+### Compare the commands
+
+
+| By hand                                                         | With Compose                           |
+| --------------------------------------------------------------- | -------------------------------------- |
+| `docker ps`                                                     | `docker compose ps`                    |
+| `docker exec gateway curl ...`                                  | `docker compose exec gateway curl ...` |
+| `docker rm -f gateway processor` and `docker network rm toynet` | `docker compose down`                  |
+| `-p` on `docker run`                                            | `ports:` in YAML                       |
+| `-e` on `docker run`                                            | `environment:` in YAML                 |
+
+
+You can repeat the port experiments in `docker-compose.yml`.
+
+After changing a setting, run:
+
+```bash
+docker compose up -d
+```
+
+Compose applies the changes and runs the app in the background.
+
+If you change a Dockerfile or something copied into an image during its build, request a rebuild:
+
+```bash
+docker compose up -d --build
 ```
 
 
 
-### Start both containers
+### Stop and remove the app
 
-- `docker compose up`
+If Compose is running in your terminal, press `Ctrl+C` to stop the containers.
 
-You should see the same announcements as before:
+Then run:
 
+```bash
+docker compose down
 ```
-processor-1  | processor listening on port 9200 (internal only)
-gateway-1    | gateway listening on port 9100  →  open http://localhost:8090
+
+This removes the containers and the network managed by Compose. The built images remain.
+
+### Why use both commands?
+
+`Ctrl+C` stops the containers but leaves them in place.
+
+You can still see them with:
+
+```bash
+docker compose ps -a
 ```
 
-> [!TIP]
-> **What** `docker compose up` **just did:** Four things in one command — (1) read `docker-compose.yml` and built an image for each service from its `Dockerfile`, (2) created a private network called `port_toy_default` for this project, (3) started both containers on that network, and (4) registered each one under its **service name** in that network's DNS, so `gateway` can reach `http://processor:9200` with no IP addresses anywhere. That's exactly what you did by hand in Steps 1–3.
+`docker compose down` removes them and the Compose-managed network.
 
-- Open **[http://localhost:8090](http://localhost:8090)** and send a message. Identical behavior — one file instead of a dozen flags.
-
-
-
-### Compose equivalents of what you already know
-
-
-| By hand                                                       | With Compose                           |
-| ------------------------------------------------------------- | -------------------------------------- |
-| `docker ps`                                                   | `docker compose ps`                    |
-| `docker exec gateway curl ...`                                | `docker compose exec gateway curl ...` |
-| `docker rm -f gateway processor` + `docker network rm toynet` | `docker compose down`                  |
-| `-p` / `-e` on `docker run`                                   | `ports:` / `environment:` in the YAML  |
-
-
-Try the port experiments again if you like — change the numbers in `docker-compose.yml`, then `docker compose up -d` — and you'll see why Compose is the form you'll use for the rest of the course: the contract lives in one checked-in file that anyone on your team can run.
-
-### Stop it
-
-- Press `Ctrl+C` to stop the containers
-- Run `docker compose down` to remove them
-
-> [!TIP]
-> **Why both?** `Ctrl+C` only **stops** the containers — it doesn't remove them. Run `docker compose ps -a` (note the `-a`, for "all") and you'll still see both, sitting in the `exited` state; `docker network ls` still lists the `port_toy_default` network Compose created. `docker compose down` is the true inverse of `up`: `up` made containers *and* a network, so `down` removes containers *and* the network, leaving only the built images behind.
-
-> [!NOTE]
-> You may hear that you need `down` to "free up the port." Not so — a *stopped* container has already released its port binding, so `localhost:8090` goes dead the moment you press `Ctrl+C`. `down` is about not leaving containers and networks behind, not about the port.
+A stopped container no longer serves its published port. You use `down` to clean up the containers and network—not just to stop traffic.
 
 ---
 
 
 
-## Port and Networking Cheat Sheet
+## Port and networking cheat sheet
 
 
-| What you see                   | What it means                                                                         |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `"8090:9100"` / `-p 8090:9100` | `host:container` — port 8090 on your laptop forwards to 9100 inside the container     |
-| `"127.0.0.1:8090:9100"`        | `ip:host:container` — same, but only **this** machine may connect                     |
-| `127.0.0.1:8090->9100/tcp`     | The mapping as `docker ps` reports it. Left of `->` is the host                       |
-| `0.0.0.0:8090->9100/tcp`       | What you get with no IP — **every** address, so others on your wifi can reach it      |
-| No `ports:` / no `-p`          | Container is **internal only** — reachable from the network, invisible to your laptop |
-| `EXPOSE 9100` in a Dockerfile  | Documentation only. It does **not** publish anything; you still need `-p`             |
-| `localhost` inside a container | That container itself — not your laptop, not another container                        |
-| `http://processor:9200`        | Another container **by service name**, resolved by Docker's DNS                       |
-| Listening port (`9200`)        | Stable, you configure it, a server waits there                                        |
-| Source port (`44456`)          | Ephemeral, picked by the OS per connection, discarded afterwards                      |
-| `port is already allocated`    | Two containers tried to publish the **same host port**. Change the left number        |
-| `Connection refused`           | Something is listening somewhere, but not at the address you dialed                   |
-| `could not resolve host`       | The **name** is wrong, or the containers aren't on the same user-defined network      |
+| Setting or message             | Meaning                                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `-p 8090:9100`                 | Forward host port `8090` to container port `9100`.                                        |
+| `-p 127.0.0.1:8090:9100`       | Publish the port for access from this machine only.                                       |
+| `127.0.0.1:8090->9100/tcp`     | The mapping shown by `docker ps`. The host is on the left.                                |
+| `0.0.0.0:8090->9100/tcp`       | The port is published on all IPv4 host addresses.                                         |
+| No `ports:` or `-p`            | No host port is published. Containers on the same network can still connect.              |
+| `EXPOSE 9100`                  | Documents a container port. It does not publish it.                                       |
+| `localhost` inside a container | That container itself.                                                                    |
+| `http://processor:9200`        | Connect to the processor by name on port `9200`.                                          |
+| Listening port                 | The port where a server accepts connections.                                              |
+| Source port                    | The port used by the caller for a connection. Usually chosen automatically.               |
+| `port is already allocated`    | The requested host address and port are already in use.                                   |
+| `Connection refused`           | The connection was rejected, often because nothing is listening at that address and port. |
+| `could not resolve host`       | The hostname could not be resolved. Check the name and network.                           |
 
 
 
 
-### Handy commands
+## Handy commands
 
 
-| Command                                                | What it does                                                                  |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `docker network create toynet`                         | Create a user-defined network (name DNS included)                             |
-| `docker build -t toy-gateway ./gateway`                | Build an image from a Dockerfile                                              |
-| `docker run -d --name ... --network ... -p ... -e ...` | Start a container with name, network, ports, env                              |
-| `docker ps`                                            | List running containers and their published ports                             |
-| `docker exec gateway sh`                               | Open a shell **inside** the gateway container                                 |
-| `docker rm -f gateway processor`                       | Force-remove containers                                                       |
-| `docker network rm toynet`                             | Remove the network you created                                                |
-| `docker compose up -d`                                 | Build (if needed) and start everything in the background                      |
-| `docker compose ps`                                    | List this project's containers and their published ports                      |
-| `docker compose logs -f gateway`                       | Follow one service's logs                                                     |
-| `docker compose exec gateway sh`                       | Open a shell **inside** the gateway container                                 |
-| `docker compose down`                                  | Stop the containers and remove the network                                    |
-| `docker network ls`                                    | List networks — you'll see `toynet` or `port_toy_default` while the app is up |
-| `docker network inspect toynet`                        | Show which containers are attached, and their IPs                             |
+| Command                                 | Purpose                                                   |
+| --------------------------------------- | --------------------------------------------------------- |
+| `docker network create toynet`          | Create the network.                                       |
+| `docker build -t toy-gateway ./gateway` | Build the gateway image.                                  |
+| `docker ps`                             | List running containers and port mappings.                |
+| `docker logs gateway`                   | Show the gateway’s logs.                                  |
+| `docker exec -it gateway sh`            | Open an interactive shell in the gateway.                 |
+| `docker rm -f gateway processor`        | Stop and remove both containers.                          |
+| `docker network rm toynet`              | Remove the network.                                       |
+| `docker compose up -d`                  | Start the Compose app in the background.                  |
+| `docker compose up -d --build`          | Rebuild the images and start the app.                     |
+| `docker compose ps`                     | List the project’s running containers.                    |
+| `docker compose logs -f gateway`        | Follow the gateway’s logs.                                |
+| `docker compose exec gateway sh`        | Open a shell in the gateway.                              |
+| `docker compose down`                   | Stop and remove the app’s containers and managed network. |
+| `docker network ls`                     | List Docker networks.                                     |
+| `docker network inspect toynet`         | Show the network’s containers and IP addresses.           |
 
 
